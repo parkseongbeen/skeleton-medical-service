@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import api from '../api/axiosInstance';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
+import { analyzeNote, URGENCY_STYLES, parseTags } from '../utils/noteAiAnalyzer';
 
 /* ─────────────────────────────────────────────────────────────
    상수
@@ -90,6 +92,32 @@ const ClockGauge = ({ intervalHours, record, now }) => {
 };
 
 /* ─────────────────────────────────────────────────────────────
+   바이탈 추이 미니 차트
+───────────────────────────────────────────────────────────── */
+const VitalChart = ({ data, lines }) => (
+  <ResponsiveContainer width="100%" height={180}>
+    <LineChart data={data} margin={{ top: 5, right: 12, left: -16, bottom: 0 }}>
+      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+      <XAxis dataKey="time" tick={{ fontSize: 11, fill: '#9ca3af' }} interval="preserveStartEnd" />
+      <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} domain={['auto', 'auto']} />
+      <Tooltip contentStyle={{ borderRadius: 12, fontSize: 12, border: '1px solid #f1f5f9' }} />
+      {lines.map(line => (
+        <Line
+          key={line.dataKey}
+          type="monotone"
+          dataKey={line.dataKey}
+          name={line.name}
+          stroke={line.color}
+          strokeWidth={2}
+          dot={false}
+          connectNulls
+        />
+      ))}
+    </LineChart>
+  </ResponsiveContainer>
+);
+
+/* ─────────────────────────────────────────────────────────────
    메인 컴포넌트
 ───────────────────────────────────────────────────────────── */
 const DetailedData = () => {
@@ -145,6 +173,20 @@ const DetailedData = () => {
   const [noteForm, setNoteForm] = useState({ noteType: 'PATIENT', content: '' });
   const [noteSubmitting, setNoteSubmitting] = useState(false);
   const [noteError,      setNoteError]      = useState('');
+
+  /** 입력 중인 메모 내용을 실시간으로 분석한 AI 미리보기 (키워드 기반, 외부 API 불필요) */
+  const notePreview = useMemo(() => analyzeNote(noteForm.content), [noteForm.content]);
+
+  /** 바이탈 이력을 차트용 데이터로 변환 (시간 라벨 + 각 수치) */
+  const chartData = useMemo(() => history.map(v => ({
+    time: new Date(v.recordedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+    heartRate: v.heartRate,
+    bpSystolic: v.bpSystolic,
+    bpDiastolic: v.bpDiastolic,
+    oxygenSaturation: v.oxygenSaturation,
+    temperature: v.temperature,
+    respiratoryRate: v.respiratoryRate,
+  })), [history]);
 
   /* ── Effects ─────────────────────────────────────────────── */
   useEffect(() => {
@@ -562,6 +604,32 @@ const DetailedData = () => {
               <section className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-white">
                 <h3 className="text-2xl font-black text-[#191c1d] mb-6">바이탈 이력 (최근 24시간)</h3>
                 {history.length > 0 ? (
+                  <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mb-8">
+                    <div className="bg-[#f8f9fa] rounded-2xl p-4">
+                      <p className="text-xs font-black text-gray-400 mb-2">심박수 (bpm)</p>
+                      <VitalChart data={chartData} lines={[{ dataKey: 'heartRate', name: '심박수', color: '#ef4444' }]} />
+                    </div>
+                    <div className="bg-[#f8f9fa] rounded-2xl p-4">
+                      <p className="text-xs font-black text-gray-400 mb-2">혈압 (mmHg)</p>
+                      <VitalChart data={chartData} lines={[
+                        { dataKey: 'bpSystolic', name: '수축기', color: '#0ea5e9' },
+                        { dataKey: 'bpDiastolic', name: '이완기', color: '#7dd3fc' },
+                      ]} />
+                    </div>
+                    <div className="bg-[#f8f9fa] rounded-2xl p-4">
+                      <p className="text-xs font-black text-gray-400 mb-2">체온 (°C)</p>
+                      <VitalChart data={chartData} lines={[{ dataKey: 'temperature', name: '체온', color: '#f97316' }]} />
+                    </div>
+                    <div className="bg-[#f8f9fa] rounded-2xl p-4">
+                      <p className="text-xs font-black text-gray-400 mb-2">산소포화도 (%)</p>
+                      <VitalChart data={chartData} lines={[{ dataKey: 'oxygenSaturation', name: '산소포화도', color: '#3b82f6' }]} />
+                    </div>
+                    <div className="bg-[#f8f9fa] rounded-2xl p-4">
+                      <p className="text-xs font-black text-gray-400 mb-2">호흡수 (회/분)</p>
+                      <VitalChart data={chartData} lines={[{ dataKey: 'respiratoryRate', name: '호흡수', color: '#22c55e' }]} />
+                    </div>
+                  </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
@@ -594,6 +662,7 @@ const DetailedData = () => {
                       </tbody>
                     </table>
                   </div>
+                  </>
                 ) : (
                   <div className="h-32 bg-[#f8f9fa] rounded-2xl border-2 border-dashed border-gray-200 flex items-center justify-center">
                     <p className="text-gray-400 font-bold">최근 24시간 이내 바이탈 기록이 없습니다.</p>
@@ -872,6 +941,31 @@ const DetailedData = () => {
                         onChange={e => setNoteForm(f => ({ ...f, content: e.target.value }))}
                         className={inputCls + ' resize-none'} />
                     </div>
+
+                    {/* AI 분석 실시간 미리보기 — 작성 중인 내용을 즉시 분석해 긴급도·태그·요약을 보여줌 */}
+                    {noteForm.content.trim() && (
+                      <div className="rounded-2xl p-4 border border-gray-200 bg-white/70">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="material-symbols-outlined text-base text-[#697077]">smart_toy</span>
+                          <span className="text-xs font-black text-[#697077] uppercase tracking-widest">AI 분석 미리보기</span>
+                          <span className={`ml-auto inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black ${URGENCY_STYLES[notePreview.urgency].badge}`}>
+                            <span className="material-symbols-outlined text-sm">{URGENCY_STYLES[notePreview.urgency].icon}</span>
+                            {notePreview.urgency}
+                          </span>
+                        </div>
+                        {notePreview.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mb-2">
+                            {notePreview.tags.map((tag) => (
+                              <span key={tag} className="px-2.5 py-1 rounded-lg bg-gray-100 text-gray-600 text-[11px] font-bold">
+                                #{tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <p className="text-xs text-gray-600 font-medium leading-relaxed">{notePreview.summary}</p>
+                      </div>
+                    )}
+
                     {noteError && <p className="text-red-500 text-sm font-bold">{noteError}</p>}
                     <div className="flex gap-3">
                       <button onClick={submitNote} disabled={noteSubmitting}
@@ -888,9 +982,12 @@ const DetailedData = () => {
 
                 {notes.length > 0 ? (
                   <div className="divide-y divide-gray-50">
-                    {[...notes].reverse().map((note, i) => (
+                    {[...notes].reverse().map((note, i) => {
+                      const urgency = note.aiUrgency && URGENCY_STYLES[note.aiUrgency] ? note.aiUrgency : null;
+                      const tags = parseTags(note.aiTags);
+                      return (
                       <div key={i} className="p-8 hover:bg-gray-50 transition-colors">
-                        <div className="flex items-center gap-3 mb-2">
+                        <div className="flex items-center gap-3 mb-2 flex-wrap">
                           <span className={`text-sm font-black ${NOTE_TYPE_COLORS[note.noteType] ?? 'text-gray-600'}`}>
                             {NOTE_TYPE_LABELS[note.noteType] ?? note.noteType}
                           </span>
@@ -898,10 +995,38 @@ const DetailedData = () => {
                           <span className="text-gray-400 font-semibold text-sm">
                             {note.createdAt ? new Date(note.createdAt).toLocaleString('ko-KR') : '—'}
                           </span>
+                          {urgency && (
+                            <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black ${URGENCY_STYLES[urgency].badge}`}>
+                              <span className="material-symbols-outlined text-sm">{URGENCY_STYLES[urgency].icon}</span>
+                              AI 긴급도 · {urgency}
+                            </span>
+                          )}
                         </div>
                         <p className="text-base text-gray-700 font-medium leading-relaxed">{note.content}</p>
+
+                        {(tags.length > 0 || note.aiSummary) && (
+                          <div className="mt-3 rounded-2xl bg-[#f8f9fa] border border-gray-100 p-4">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="material-symbols-outlined text-base text-[#00478d]">smart_toy</span>
+                              <span className="text-[11px] font-black text-[#00478d] uppercase tracking-widest">AI 자동 분석</span>
+                            </div>
+                            {tags.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5 mb-2">
+                                {tags.map((tag) => (
+                                  <span key={tag} className="px-2.5 py-1 rounded-lg bg-white border border-gray-200 text-gray-600 text-[11px] font-bold">
+                                    #{tag}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {note.aiSummary && (
+                              <p className="text-xs text-gray-500 font-medium leading-relaxed">{note.aiSummary}</p>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="p-12 text-center">

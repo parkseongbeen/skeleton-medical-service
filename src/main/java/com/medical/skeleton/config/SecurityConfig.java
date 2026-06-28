@@ -66,6 +66,8 @@ public class SecurityConfig {
                 .requestMatchers("/api/ai/**").permitAll()
                 // CCTV용 정적 파일 (영상, 스켈레톤 JSON) - 인증 없이 허용
                 .requestMatchers("/videos/**", "/skeleton/**").permitAll()
+                // WebSocket(STOMP/SockJS) 핸드셰이크 - 인증 없이 허용
+                .requestMatchers("/ws/**").permitAll()
                 // 대시보드: 간호사·의사·관리자 모두 접근 가능
                 .requestMatchers(HttpMethod.GET, "/api/wards/*/dashboard")
                     .hasAnyRole("NURSE", "DOCTOR", "ADMIN")

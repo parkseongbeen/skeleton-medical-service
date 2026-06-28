@@ -11,6 +11,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 
 /**
@@ -60,6 +61,28 @@ public class AlertService {
         Patient patient = patientRepository.findById(patientId)
                 .orElseThrow(() -> new IllegalArgumentException("환자를 찾을 수 없습니다: " + patientId));
 
+        // 같은 환자에게 동일 유형의 미해결 알림이 있으면 새 행을 계속 쌓지 않는다.
+        // 대시보드에서 한 번 확인 처리한 뒤 같은 문제가 다시 발생하면 새 알림이 생성된다.
+        if (alertRepository.existsByPatientIdAndAlertTypeAndResolvedFalse(patientId, type)) {
+            log.debug("중복 미해결 알림 생략 - 환자: {}, 타입: {}", patientId, type);
+            return;
+        }
+
+        // 투약 알림을 확인한 직후에도 지연 상태 자체는 남아 있어 스케줄러가 다시 호출된다.
+        // 확인 후 30분 동안은 같은 유형을 재발송하지 않아 대시보드에서 즉시 되살아나는 현상을 막는다.
+        if (isMedicationAlert(type)) {
+            boolean recentlyResolved = alertRepository
+                    .findTopByPatientIdAndAlertTypeOrderByOccurredAtDesc(patientId, type)
+                    .filter(Alert::isResolved)
+                    .map(Alert::getResolvedAt)
+                    .filter(resolvedAt -> Duration.between(resolvedAt, LocalDateTime.now()).toMinutes() < 30)
+                    .isPresent();
+            if (recentlyResolved) {
+                log.debug("최근 확인한 투약 알림 재발송 생략 - 환자: {}, 타입: {}", patientId, type);
+                return;
+            }
+        }
+
         // 1. DB에 이력 저장
         Alert alert = Alert.builder()
                 .patientId(patientId)
@@ -99,5 +122,16 @@ public class AlertService {
         Alert alert = alertRepository.findById(alertId)
                 .orElseThrow(() -> new IllegalArgumentException("알림을 찾을 수 없습니다: " + alertId));
         alert.resolve(userId);
+    }
+
+    @Transactional
+    public void resolvePatientAlerts(Long patientId, Long userId) {
+        alertRepository.findByPatientIdAndResolvedFalseOrderByOccurredAtDesc(patientId)
+                .forEach(alert -> alert.resolve(userId));
+    }
+
+    private boolean isMedicationAlert(AlertMessage.AlertType type) {
+        return type == AlertMessage.AlertType.MEDICATION_OVERDUE
+                || type == AlertMessage.AlertType.MEDICATION_DUE_SOON;
     }
 }

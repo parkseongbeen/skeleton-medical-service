@@ -1,129 +1,483 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { login } from '../api/auth';
+import { login, register, emergencyAccess } from '../api/auth';
+
+const ROLE_OPTIONS = [
+  { value: 'NURSE',  label: '간호사' },
+  { value: 'DOCTOR', label: '의사' },
+];
 
 const PatientAuth = () => {
   const navigate = useNavigate();
-  // 처음부터 '882'를 넣어두고 시작합니다.
-  const [code, setCode] = useState(""); 
-  const MAX_LENGTH = 6; 
 
-  const [loading, setLoading] = useState(false); 
+  // 'login' | 'register'
+  const [mode, setMode] = useState('login');
+
+  /* ---------- 로그인 폼 상태 ---------- */
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+
+  /* ---------- 회원가입 폼 상태 ---------- */
+  const [regName, setRegName] = useState('');
+  const [regUsername, setRegUsername] = useState('');
+  const [regRole, setRegRole] = useState('NURSE');
+  const [regPassword, setRegPassword] = useState('');
+  const [regPasswordConfirm, setRegPasswordConfirm] = useState('');
+  const [showRegPassword, setShowRegPassword] = useState(false);
+
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  
-  const handlePress = (val) => {
-    if (code.length < MAX_LENGTH) setCode(prev => prev + val);
+
+  /* ---------- 긴급 접근 모달 상태 ---------- */
+  const [showEmergencyModal, setShowEmergencyModal] = useState(false);
+  const [emergencyLoading, setEmergencyLoading] = useState(false);
+  const [emergencyError, setEmergencyError] = useState('');
+
+  const switchMode = (next) => {
+    setMode(next);
+    setError('');
   };
 
-  const handleBackspace = () => {
-    setCode(prev => prev.slice(0, -1));
-  };
+  /* ---------- 로그인 제출 ---------- */
+  const handleSubmit = async (e) => {
+    e.preventDefault();
 
-  const handleSubmit = async () => {
-    if (code.length !== 6) {
-      alert('환자 코드 6자리를 모두 입력해주세요!');
+    if (!username.trim() || !password.trim()) {
+      setError('사번(또는 이메일)과 비밀번호를 모두 입력해 주세요.');
       return;
     }
 
-    setLoading(true); // 로딩 상태 시작
-    setError('');     // 기존 에러 초기화
+    setLoading(true);
+    setError('');
 
     try {
-      // 성빈님이 만든 login 함수 호출!
-      // 환자 코드를 아이디와 비밀번호로 사용합니다.
-      await login(code, code); 
-      
-      // 성공하면 대시보드로 이동!
+      await login(username.trim(), password);
+      navigate('/dashboard');
+    } catch {
+      setError('사번/이메일 또는 비밀번호가 올바르지 않습니다. 다시 확인해 주세요.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* ---------- 회원가입 제출 ---------- */
+  const handleRegisterSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    if (!regName.trim() || !regUsername.trim() || !regPassword || !regPasswordConfirm) {
+      setError('모든 항목을 입력해 주세요.');
+      return;
+    }
+    if (regPassword.length < 4) {
+      setError('비밀번호는 4자 이상이어야 합니다.');
+      return;
+    }
+    if (regPassword !== regPasswordConfirm) {
+      setError('비밀번호가 일치하지 않습니다.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await register({
+        username: regUsername.trim(),
+        password: regPassword,
+        name: regName.trim(),
+        role: regRole,
+      });
       navigate('/dashboard');
     } catch (err) {
-      // 실패하면 에러 메시지 띄우기
-      setError('코드가 올바르지 않습니다. 다시 확인해주세요.');
+      const msg = err?.response?.data?.message || '회원가입에 실패했습니다. 입력 정보를 확인해 주세요.';
+      setError(msg);
     } finally {
-      setLoading(false); // 로딩 끝
+      setLoading(false);
+    }
+  };
+
+  /* ---------- 긴급 접근 ---------- */
+  const handleEmergencyConfirm = async () => {
+    setEmergencyLoading(true);
+    setEmergencyError('');
+    try {
+      await emergencyAccess();
+      navigate('/dashboard');
+    } catch {
+      setEmergencyError('긴급 접근에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      setEmergencyLoading(false);
     }
   };
 
   return (
-    <main className="relative flex items-center justify-center min-h-screen w-full bg-[#f8f9fa] p-10 font-sans overflow-hidden">
+    <main className="relative flex items-center justify-center min-h-screen w-full bg-[#f8f9fa] p-6 font-sans overflow-hidden">
       <div className="absolute inset-0 bg-[#e2e8f0]/40 blur-[100px] -z-10" />
-      <div className="w-full max-w-6xl flex items-center justify-between gap-16">
-        
-        {/* 왼쪽 섹션 */}
-        <div className="flex-1 max-w-[450px]">
-          <div className="mb-10">
-            <span className="text-[#00478d] font-black text-2xl tracking-tighter uppercase">ANON-CARE</span>
-            <div className="h-1.5 w-14 bg-[#00478d] mt-2" />
+
+      {/* 카드 */}
+      <div className="w-full max-w-[440px] bg-white rounded-[2.5rem] p-10 sm:p-12 shadow-[0_40px_100px_-20px_rgba(0,0,0,0.12)]">
+
+        {/* 브랜딩 */}
+        <div className="flex flex-col items-center text-center mb-10">
+          <div className="w-16 h-16 rounded-2xl bg-[#00478d] flex items-center justify-center shadow-lg shadow-[#00478d]/20 mb-5">
+            <span className="material-symbols-outlined text-white text-3xl">monitor_heart</span>
           </div>
-          <h1 className="text-7xl font-black text-[#191c1d] mb-6 tracking-tight">환자 확인</h1>
-          <p className="text-xl text-[#424752] font-medium leading-relaxed mb-20">의료 기록에 접근하기 위해 환자 고유 코드를 입력해 주세요.</p>
-          <button className="flex items-center gap-4 bg-[#ffdad6]/70 border border-[#ffdad6] p-4 px-7 rounded-2xl group shadow-sm">
-            <div className="bg-[#ffdad6] p-2.5 rounded-xl"><span className="material-symbols-outlined text-[#940010] font-bold">warning</span></div>
-            <span className="text-[#940010] text-2xl font-black">긴급 접근</span>
-          </button>
+          <span className="text-[#00478d] font-black text-2xl tracking-tighter uppercase">ANON-CARE</span>
+          <p className="text-[#697077] text-sm font-medium mt-2">
+            {mode === 'login' ? '병동 모니터링 시스템에 로그인하세요' : '의료진 계정을 새로 만들어 보세요'}
+          </p>
         </div>
 
-        {/* 오른쪽 카드 */}
-        <div className="w-[520px] bg-white rounded-[3.5rem] p-12 shadow-[0_40px_100px_-20px_rgba(0,0,0,0.1)]">
-          <div className="flex justify-center items-center gap-4 mb-14">
-            {/* 6칸을 돌면서 입력된 값을 보여줌 */}
-            {[0, 1, 2, 3, 4, 5].map((i) => (
-              <React.Fragment key={i}>
-                <div className={`w-12 h-16 border-b-4 ${code[i] ? 'border-[#00478d]' : 'border-gray-200'} flex items-center justify-center text-5xl font-bold text-[#1a1c1e]`}>
-                  {code[i] || ""}
+        {mode === 'login' ? (
+          <>
+            {/* 로그인 폼 */}
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label htmlFor="username" className="block text-xs font-bold text-[#424752] mb-2 ml-1 tracking-wide">
+                  사번 또는 이메일
+                </label>
+                <div className="relative">
+                  <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-xl">
+                    badge
+                  </span>
+                  <input
+                    id="username"
+                    type="text"
+                    autoComplete="username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="예) 20260612 또는 name@hospital.com"
+                    className="w-full h-14 pl-12 pr-4 rounded-2xl bg-[#f1f3f6] border border-transparent text-[#1a1c1e] font-medium placeholder:text-gray-400 placeholder:font-normal focus:bg-white focus:border-[#00478d] focus:outline-none focus:ring-4 focus:ring-[#00478d]/10 transition-all"
+                  />
                 </div>
-                {i === 2 && <div className="text-4xl font-bold text-gray-300 mx-1">-</div>}
-              </React.Fragment>
-            ))}
-          </div>
-          <div className="grid grid-cols-3 gap-5">
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
-              <button 
-                key={n} 
-                onClick={() => handlePress(n.toString())} 
-                className="h-20 rounded-2xl bg-[#f1f3f6] hover:bg-[#e4e7eb] text-3xl font-bold text-[#1a1c1e] transition-all active:scale-95"
+              </div>
+
+              <div>
+                <label htmlFor="password" className="block text-xs font-bold text-[#424752] mb-2 ml-1 tracking-wide">
+                  비밀번호
+                </label>
+                <div className="relative">
+                  <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-xl">
+                    lock
+                  </span>
+                  <input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="비밀번호를 입력하세요"
+                    className="w-full h-14 pl-12 pr-12 rounded-2xl bg-[#f1f3f6] border border-transparent text-[#1a1c1e] font-medium placeholder:text-gray-400 placeholder:font-normal focus:bg-white focus:border-[#00478d] focus:outline-none focus:ring-4 focus:ring-[#00478d]/10 transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#00478d] transition-colors"
+                    tabIndex={-1}
+                  >
+                    <span className="material-symbols-outlined text-xl">
+                      {showPassword ? 'visibility_off' : 'visibility'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 에러 메시지 */}
+              {error && (
+                <p className="text-[#940010] text-sm font-bold text-center bg-[#ffdad6]/60 border border-[#ffdad6] rounded-xl py-3 px-4">
+                  {error}
+                </p>
+              )}
+
+              {/* 로그인 버튼 */}
+              <button
+                type="submit"
+                disabled={loading}
+                className={`w-full h-14 rounded-2xl flex items-center justify-center gap-2 text-lg font-black shadow-lg transition-all
+                  ${loading
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    : 'bg-[#00478d] text-white hover:bg-[#00355f] active:scale-[0.98] shadow-[#00478d]/25'}`}
               >
-                {n}
+                {loading ? (
+                  <>
+                    <span className="material-symbols-outlined animate-spin text-xl">progress_activity</span>
+                    확인 중입니다...
+                  </>
+                ) : (
+                  <>
+                    로그인
+                    <span className="material-symbols-outlined text-xl">arrow_forward</span>
+                  </>
+                )}
               </button>
-            ))}
-            
-            <button onClick={handleBackspace} className="h-20 rounded-2xl flex items-center justify-center hover:bg-gray-50">
-              <span className="material-symbols-outlined text-3xl text-gray-500 font-bold">backspace</span>
-            </button>
-            
-            <button onClick={() => handlePress("0")} className="h-20 rounded-2xl bg-[#f1f3f6] hover:bg-[#e4e7eb] text-3xl font-bold text-[#1a1c1e]">
-              0
-            </button>
-            
-            <button 
-              onClick={handleSubmit} 
-              disabled={loading}
-              className={`h-20 rounded-2xl flex items-center justify-center shadow-lg transition-all ${code.length === 6 ? 'bg-[#3b5998] text-white active:scale-95' : 'bg-gray-200 text-gray-400'}`}
-            >
-              <span className="material-symbols-outlined text-3xl font-bold">arrow_forward</span>
-            </button>
-          </div> 
-          {/* 숫자 버튼 상자 끝 */}
+            </form>
 
-          {/* 에러 메시지 (버튼들 아래에 나타남) */}
-          {error && (
-            <p className="text-red-500 text-center mt-6 font-bold animate-bounce">
-              {error}
+            {/* 보조 옵션 */}
+            <div className="flex items-center justify-between mt-5 px-1">
+              <label className="flex items-center gap-2 text-xs font-medium text-[#697077] cursor-pointer select-none">
+                <input type="checkbox" className="w-4 h-4 rounded accent-[#00478d]" />
+                로그인 상태 유지
+              </label>
+              <button type="button" className="text-xs font-bold text-[#00478d] hover:underline">
+                비밀번호를 잊으셨나요?
+              </button>
+            </div>
+
+            {/* 회원가입 안내 */}
+            <p className="text-center text-sm font-medium text-[#697077] mt-6">
+              아직 계정이 없으신가요?{' '}
+              <button
+                type="button"
+                onClick={() => switchMode('register')}
+                className="font-black text-[#00478d] hover:underline"
+              >
+                회원가입
+              </button>
             </p>
-          )}
 
-          {/* 로딩 메시지 */}
-          {loading && (
-            <p className="text-blue-500 text-center mt-2 font-medium">확인 중입니다...</p>
-          )}
+            {/* 구분선 */}
+            <div className="flex items-center gap-4 my-8">
+              <div className="flex-1 h-px bg-gray-100" />
+              <span className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">또는</span>
+              <div className="flex-1 h-px bg-gray-100" />
+            </div>
 
-          <div className="mt-10 pt-8 border-t border-gray-50 flex justify-center">
-            <button className="flex items-center gap-3 text-[#00478d] font-bold text-sm tracking-widest uppercase">
-              <span className="material-symbols-outlined text-xl">barcode_scanner</span>
-              환자 ID 팔찌 스캔
-            </button>
+            {/* 빠른 접근 옵션 */}
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={() => { setEmergencyError(''); setShowEmergencyModal(true); }}
+                className="w-full h-14 rounded-2xl flex items-center justify-center gap-3 bg-[#ffdad6]/70 border border-[#ffdad6] text-[#940010] font-black hover:bg-[#ffdad6] transition-all active:scale-[0.98]"
+              >
+                <span className="material-symbols-outlined text-xl">warning</span>
+                긴급 접근
+              </button>
+            </div>
+
+            <p className="text-center text-[11px] text-gray-400 font-medium mt-8">
+              © 2026 ANON-CARE · 의료진 전용 모니터링 시스템
+            </p>
+          </>
+        ) : (
+          <>
+            {/* 회원가입 폼 */}
+            <form onSubmit={handleRegisterSubmit} className="space-y-4">
+              <div>
+                <label htmlFor="regName" className="block text-xs font-bold text-[#424752] mb-2 ml-1 tracking-wide">
+                  이름
+                </label>
+                <div className="relative">
+                  <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-xl">
+                    person
+                  </span>
+                  <input
+                    id="regName"
+                    type="text"
+                    autoComplete="name"
+                    value={regName}
+                    onChange={(e) => setRegName(e.target.value)}
+                    placeholder="실명을 입력하세요"
+                    className="w-full h-14 pl-12 pr-4 rounded-2xl bg-[#f1f3f6] border border-transparent text-[#1a1c1e] font-medium placeholder:text-gray-400 placeholder:font-normal focus:bg-white focus:border-[#00478d] focus:outline-none focus:ring-4 focus:ring-[#00478d]/10 transition-all"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="regUsername" className="block text-xs font-bold text-[#424752] mb-2 ml-1 tracking-wide">
+                  사번 또는 이메일
+                </label>
+                <div className="relative">
+                  <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-xl">
+                    badge
+                  </span>
+                  <input
+                    id="regUsername"
+                    type="text"
+                    autoComplete="username"
+                    value={regUsername}
+                    onChange={(e) => setRegUsername(e.target.value)}
+                    placeholder="예) 20260612 또는 name@hospital.com"
+                    className="w-full h-14 pl-12 pr-4 rounded-2xl bg-[#f1f3f6] border border-transparent text-[#1a1c1e] font-medium placeholder:text-gray-400 placeholder:font-normal focus:bg-white focus:border-[#00478d] focus:outline-none focus:ring-4 focus:ring-[#00478d]/10 transition-all"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#424752] mb-2 ml-1 tracking-wide">역할</label>
+                <div className="grid grid-cols-2 gap-3">
+                  {ROLE_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setRegRole(opt.value)}
+                      className={`h-14 rounded-2xl flex items-center justify-center gap-2 font-bold border transition-all active:scale-[0.98]
+                        ${regRole === opt.value
+                          ? 'bg-[#00478d] border-[#00478d] text-white shadow-lg shadow-[#00478d]/20'
+                          : 'bg-[#f1f3f6] border-transparent text-[#697077] hover:bg-gray-100'}`}
+                    >
+                      <span className="material-symbols-outlined text-xl">
+                        {opt.value === 'NURSE' ? 'health_and_safety' : 'medical_services'}
+                      </span>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="regPassword" className="block text-xs font-bold text-[#424752] mb-2 ml-1 tracking-wide">
+                  비밀번호
+                </label>
+                <div className="relative">
+                  <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-xl">
+                    lock
+                  </span>
+                  <input
+                    id="regPassword"
+                    type={showRegPassword ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    value={regPassword}
+                    onChange={(e) => setRegPassword(e.target.value)}
+                    placeholder="4자 이상 입력하세요"
+                    className="w-full h-14 pl-12 pr-12 rounded-2xl bg-[#f1f3f6] border border-transparent text-[#1a1c1e] font-medium placeholder:text-gray-400 placeholder:font-normal focus:bg-white focus:border-[#00478d] focus:outline-none focus:ring-4 focus:ring-[#00478d]/10 transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowRegPassword((v) => !v)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#00478d] transition-colors"
+                    tabIndex={-1}
+                  >
+                    <span className="material-symbols-outlined text-xl">
+                      {showRegPassword ? 'visibility_off' : 'visibility'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="regPasswordConfirm" className="block text-xs font-bold text-[#424752] mb-2 ml-1 tracking-wide">
+                  비밀번호 확인
+                </label>
+                <div className="relative">
+                  <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-xl">
+                    lock_reset
+                  </span>
+                  <input
+                    id="regPasswordConfirm"
+                    type={showRegPassword ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    value={regPasswordConfirm}
+                    onChange={(e) => setRegPasswordConfirm(e.target.value)}
+                    placeholder="비밀번호를 한 번 더 입력하세요"
+                    className="w-full h-14 pl-12 pr-4 rounded-2xl bg-[#f1f3f6] border border-transparent text-[#1a1c1e] font-medium placeholder:text-gray-400 placeholder:font-normal focus:bg-white focus:border-[#00478d] focus:outline-none focus:ring-4 focus:ring-[#00478d]/10 transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* 에러 메시지 */}
+              {error && (
+                <p className="text-[#940010] text-sm font-bold text-center bg-[#ffdad6]/60 border border-[#ffdad6] rounded-xl py-3 px-4">
+                  {error}
+                </p>
+              )}
+
+              {/* 회원가입 버튼 */}
+              <button
+                type="submit"
+                disabled={loading}
+                className={`w-full h-14 rounded-2xl flex items-center justify-center gap-2 text-lg font-black shadow-lg transition-all
+                  ${loading
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    : 'bg-[#00478d] text-white hover:bg-[#00355f] active:scale-[0.98] shadow-[#00478d]/25'}`}
+              >
+                {loading ? (
+                  <>
+                    <span className="material-symbols-outlined animate-spin text-xl">progress_activity</span>
+                    계정을 만드는 중입니다...
+                  </>
+                ) : (
+                  <>
+                    회원가입
+                    <span className="material-symbols-outlined text-xl">arrow_forward</span>
+                  </>
+                )}
+              </button>
+            </form>
+
+            {/* 로그인으로 전환 */}
+            <p className="text-center text-sm font-medium text-[#697077] mt-6">
+              이미 계정이 있으신가요?{' '}
+              <button
+                type="button"
+                onClick={() => switchMode('login')}
+                className="font-black text-[#00478d] hover:underline"
+              >
+                로그인
+              </button>
+            </p>
+
+            <p className="text-center text-[11px] text-gray-400 font-medium mt-8">
+              © 2026 ANON-CARE · 의료진 전용 모니터링 시스템
+            </p>
+          </>
+        )}
+      </div>
+
+      {/* 긴급 접근 확인 모달 */}
+      {showEmergencyModal && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 p-6">
+          <div className="w-full max-w-[400px] bg-white rounded-[2rem] p-8 shadow-2xl">
+            <div className="flex flex-col items-center text-center mb-6">
+              <div className="w-14 h-14 rounded-2xl bg-[#ffdad6] flex items-center justify-center mb-4">
+                <span className="material-symbols-outlined text-[#940010] text-3xl">warning</span>
+              </div>
+              <h3 className="text-lg font-black text-[#191c1d]">긴급 접근을 사용하시겠습니까?</h3>
+              <p className="text-sm font-medium text-[#697077] mt-2 leading-relaxed">
+                긴급 접근은 본인 계정 없이 응급 전용 계정으로 즉시 접속합니다.
+                반드시 의료 응급 상황에서만 사용해 주세요. 접속 기록은 시스템에 남습니다.
+              </p>
+            </div>
+
+            {emergencyError && (
+              <p className="text-[#940010] text-sm font-bold text-center bg-[#ffdad6]/60 border border-[#ffdad6] rounded-xl py-3 px-4 mb-4">
+                {emergencyError}
+              </p>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowEmergencyModal(false)}
+                disabled={emergencyLoading}
+                className="flex-1 h-14 rounded-2xl flex items-center justify-center font-bold border border-gray-200 text-[#1a1c1e] hover:bg-gray-50 transition-all active:scale-[0.98] disabled:opacity-50"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleEmergencyConfirm}
+                disabled={emergencyLoading}
+                className={`flex-1 h-14 rounded-2xl flex items-center justify-center gap-2 font-black shadow-lg transition-all active:scale-[0.98]
+                  ${emergencyLoading
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    : 'bg-[#940010] text-white hover:bg-[#7a000d] shadow-[#940010]/25'}`}
+              >
+                {emergencyLoading ? (
+                  <>
+                    <span className="material-symbols-outlined animate-spin text-xl">progress_activity</span>
+                    접속 중...
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-xl">login</span>
+                    긴급 접속
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </main>
   );
 };

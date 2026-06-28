@@ -56,6 +56,7 @@ const Sidebar = ({ isOpen, onClose, active }) => {
           {menuItem('/details',     'detailed', 'analytics',   '상세 데이터')}
           {menuItem('/cctv',        'cctv',     'videocam',    'CCTV 모니터링')}
           {menuItem('/bulk-vitals', 'bulk',     'table_chart', '바이탈 일괄 입력')}
+          {menuItem('/profile',     'profile',  'person',      '내 정보 수정')}
         </nav>
 
         {/* 하단 로그아웃 */}

@@ -1,5 +1,6 @@
 package com.medical.skeleton.domain.note.service;
 
+import com.medical.skeleton.domain.note.ai.NoteAiAnalyzer;
 import com.medical.skeleton.domain.note.dto.NoteRequest;
 import com.medical.skeleton.domain.note.entity.Note;
 import com.medical.skeleton.domain.note.repository.NoteRepository;
@@ -14,6 +15,7 @@ import java.util.List;
 public class NoteService {
 
     private final NoteRepository noteRepository;
+    private final NoteAiAnalyzer noteAiAnalyzer;
 
     @Transactional(readOnly = true)
     public List<Note> getNotes(Long patientId) {
@@ -22,11 +24,17 @@ public class NoteService {
 
     @Transactional
     public Note create(Long patientId, NoteRequest request) {
+        // AI 분석 — 메모 내용에서 긴급도·관련 태그·요약 코멘트를 자동 산출하여 함께 저장
+        NoteAiAnalyzer.AnalysisResult analysis = noteAiAnalyzer.analyze(request.getContent());
+
         Note note = Note.builder()
                 .patientId(patientId)
                 .noteType(request.getNoteType())
                 .content(request.getContent())
                 .createdBy(request.getCreatedBy())
+                .aiUrgency(analysis.urgency())
+                .aiTags(analysis.tags())
+                .aiSummary(analysis.summary())
                 .build();
         return noteRepository.save(note);
     }
@@ -35,6 +43,10 @@ public class NoteService {
     public Note update(Long patientId, Long noteId, NoteRequest request) {
         Note note = findNote(noteId, patientId);
         note.updateContent(request.getContent());
+
+        // 내용이 바뀌었으므로 AI 분석도 다시 수행해 최신 상태로 갱신
+        NoteAiAnalyzer.AnalysisResult analysis = noteAiAnalyzer.analyze(request.getContent());
+        note.applyAiAnalysis(analysis.urgency(), analysis.tags(), analysis.summary());
         return note;
     }
 

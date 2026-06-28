@@ -2,6 +2,7 @@ package com.medical.skeleton.domain.user.controller;
 
 import com.medical.skeleton.domain.user.dto.LoginRequest;
 import com.medical.skeleton.domain.user.dto.LoginResponse;
+import com.medical.skeleton.domain.user.dto.RegisterRequest;
 import com.medical.skeleton.domain.user.service.AuthService;
 import com.medical.skeleton.global.dto.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -23,6 +24,12 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<LoginResponse>> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(ApiResponse.ok(authService.login(request)));
+    }
+
+    @Operation(summary = "회원가입 (의료진 계정 생성 후 즉시 로그인)")
+    @PostMapping("/register")
+    public ResponseEntity<ApiResponse<LoginResponse>> register(@Valid @RequestBody RegisterRequest request) {
+        return ResponseEntity.ok(ApiResponse.ok("회원가입이 완료되었습니다.", authService.register(request)));
     }
 
     @Operation(summary = "토큰 갱신")

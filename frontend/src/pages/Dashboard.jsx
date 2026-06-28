@@ -4,11 +4,10 @@ import api from '../api/axiosInstance';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
 import QuickRecordModal from '../components/QuickRecordModal';
-import { useFallAlert } from '../context/FallAlertContext';
+import AlertActionModal from '../components/AlertActionModal';
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const { pendingFallRoom, setPendingFallRoom } = useFallAlert();
 
   const [isMenuOpen,    setIsMenuOpen]    = useState(false);
   const [dashboardData, setDashboardData] = useState(null);
@@ -16,6 +15,7 @@ const Dashboard = () => {
   const [error,         setError]         = useState(null);
   /** { patient, initialType } | null  — 빠른 기록 모달 제어 */
   const [modalState,    setModalState]    = useState(null);
+  const [alertPatient,  setAlertPatient]  = useState(null);
 
   /* ─── 대시보드 fetch (5초 자동 갱신) ─── */
   const fetchDashboard = useCallback(async () => {
@@ -47,18 +47,6 @@ const Dashboard = () => {
     return () => clearInterval(timer);
   }, [fetchDashboard]);
 
-  /* ─── 낙상 감지 → 해당 환자 빠른 기록 모달 자동 오픈 ─── */
-  useEffect(() => {
-    if (!pendingFallRoom || !dashboardData) return;
-    // '301호' → '301' 로 변환 후 병상번호 앞 자리와 매칭
-    const roomNum = pendingFallRoom.replace('호', '');
-    const matched = dashboardData.patients.find(p => p.bedNumber?.startsWith(roomNum));
-    if (matched) {
-      setModalState({ patient: matched, initialType: 'FALL' });
-      setPendingFallRoom(null); // 처리 완료 → 초기화
-    }
-  }, [pendingFallRoom, dashboardData, setPendingFallRoom]);
-
   /* ─── 미완료 업무 목록 계산 ─── */
   const incompleteTasks = useMemo(() => {
     if (!dashboardData) return [];
@@ -73,12 +61,12 @@ const Dashboard = () => {
           urgent:    true,
         });
       }
-      // 미처리 알림
+      // 확인이 필요한 알림
       if (p.unresolvedAlerts > 0) {
         tasks.push({
           patient:   p,
-          modalType: 'GENERAL',
-          label:     `${p.name} — 미처리 알림 ${p.unresolvedAlerts}건`,
+          action:    'ALERTS',
+          label:     `${p.name} — 확인 필요 알림 ${p.unresolvedAlerts}건`,
           urgent:    false,
         });
       }
@@ -135,7 +123,13 @@ const Dashboard = () => {
                 {incompleteTasks.map((task, i) => (
                   <button
                     key={i}
-                    onClick={() => setModalState({ patient: task.patient, initialType: task.modalType })}
+                    onClick={() => {
+                      if (task.action === 'ALERTS') {
+                        setAlertPatient(task.patient);
+                      } else {
+                        setModalState({ patient: task.patient, initialType: task.modalType });
+                      }
+                    }}
                     className="w-full text-left bg-white rounded-xl px-4 py-3 flex items-center justify-between
                                hover:bg-amber-50 transition-colors border border-amber-100 group"
                   >
@@ -199,9 +193,16 @@ const Dashboard = () => {
                       </div>
                       <div className="flex items-center gap-2">
                         {patient.unresolvedAlerts > 0 && (
-                          <span className="bg-red-500 text-white text-xs font-black px-3 py-1.5 rounded-full">
+                          <button
+                            onClick={event => {
+                              event.stopPropagation();
+                              setAlertPatient(patient);
+                            }}
+                            className="bg-red-500 text-white text-xs font-black px-3 py-1.5 rounded-full
+                                       hover:bg-red-600 transition-colors"
+                          >
                             ⚠ {patient.unresolvedAlerts}
-                          </span>
+                          </button>
                         )}
                         <span className={`text-xs font-black px-3 py-1.5 rounded-full ${badge.color}`}>
                           ● {badge.label}
@@ -301,6 +302,25 @@ const Dashboard = () => {
         initialType={modalState?.initialType || 'VITAL'}
         onSaved={fetchDashboard}
       />
+
+      {alertPatient && (
+        <AlertActionModal
+          patient={alertPatient}
+          onClose={() => setAlertPatient(null)}
+          onResolved={fetchDashboard}
+          onOpenDetails={() => navigate('/details', {
+            state: {
+              patientId: alertPatient.patientId,
+              patientName: alertPatient.name,
+            },
+          })}
+          onOpenCctv={() => navigate('/cctv', {
+            state: {
+              roomName: `${alertPatient.bedNumber?.split('-')[0]}호`,
+            },
+          })}
+        />
+      )}
     </div>
   );
 };

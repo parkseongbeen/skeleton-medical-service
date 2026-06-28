@@ -41,4 +41,16 @@ public class User {
     protected void onCreate() {
         createdAt = LocalDateTime.now();
     }
+
+    // ─── 도메인 메서드 (마이페이지 정보 수정용) ──────────────────
+
+    /** 이름 변경 */
+    public void changeName(String name) {
+        this.name = name;
+    }
+
+    /** 비밀번호 변경 — 반드시 인코딩된 값을 전달할 것 */
+    public void changePassword(String encodedPassword) {
+        this.password = encodedPassword;
+    }
 }

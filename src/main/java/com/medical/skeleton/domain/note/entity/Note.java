@@ -30,6 +30,20 @@ public class Note {
     @Column(name = "created_by", nullable = false)
     private Long createdBy;
 
+    /* ── AI 자동 분석 결과 (작성·수정 시 NoteAiAnalyzer가 산출하여 저장) ── */
+
+    /** 긴급도 — "긴급" / "주의" / "일반" */
+    @Column(name = "ai_urgency")
+    private String aiUrgency;
+
+    /** 감지된 관련 태그 (콤마로 구분된 문자열, 예: "낙상,통증") */
+    @Column(name = "ai_tags")
+    private String aiTags;
+
+    /** AI가 생성한 한 줄 요약·권장 조치 코멘트 */
+    @Column(name = "ai_summary", columnDefinition = "TEXT")
+    private String aiSummary;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -49,5 +63,12 @@ public class Note {
 
     public void updateContent(String content) {
         this.content = content;
+    }
+
+    /** AI 분석 결과를 갱신한다 (작성·수정 시 NoteAiAnalyzer 호출 결과 반영). */
+    public void applyAiAnalysis(String urgency, String tags, String summary) {
+        this.aiUrgency = urgency;
+        this.aiTags = tags;
+        this.aiSummary = summary;
     }
 }

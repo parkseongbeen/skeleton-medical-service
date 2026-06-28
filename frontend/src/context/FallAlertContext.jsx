@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { createContext, useCallback, useContext, useState, useEffect, useRef } from 'react';
 
 /**
  * 전역 낙상 감지 컨텍스트
@@ -36,26 +36,56 @@ export function FallAlertProvider({ children }) {
   const [globalAlert, setGlobalAlert] = useState(null);
   /** 낙상 감지 시 Dashboard가 해당 환자 빠른기록 모달을 열 수 있도록 룸 이름 전달 */
   const [pendingFallRoom, setPendingFallRoom] = useState(null); // e.g. '301호'
+  /** 알림 배너에 표시 중인 낙상 발생 룸 — 배너 클릭 시 빠른기록 모달을 여는 데 사용 */
+  const [alertRoomName, setAlertRoomName] = useState(null);
 
   const framesData  = useRef({});  // roomId → skeleton frames []
   const cooldowns   = useRef({});  // roomId → 쿨다운 중 여부
-  const startTime   = useRef(null); // 분석 시작 기준 시각 (ms)
+  const roomStartTimes = useRef({}); // roomId → 분석 시작 기준 시각 (ms)
+  const previousFrameIndices = useRef({});
+  const activeAlertRoomId = useRef(null);
+  const alertTimeout = useRef(null);
+
+  const clearFallAlert = useCallback((roomName = null) => {
+    const requestedRoom = roomName
+      ? ROOMS.find(room => room.name === roomName)
+      : null;
+
+    if (requestedRoom && activeAlertRoomId.current !== requestedRoom.id) return;
+
+    if (alertTimeout.current) {
+      clearTimeout(alertTimeout.current);
+      alertTimeout.current = null;
+    }
+
+    if (activeAlertRoomId.current != null) {
+      cooldowns.current[activeAlertRoomId.current] = false;
+    }
+
+    activeAlertRoomId.current = null;
+    setGlobalAlert(null);
+    setAlertRoomName(null);
+  }, []);
+
+  const resetFallAlertForVideoLoop = useCallback((roomName) => {
+    const room = ROOMS.find(candidate => candidate.name === roomName);
+    if (!room) return;
+
+    clearFallAlert(roomName);
+    cooldowns.current[room.id] = false;
+    previousFrameIndices.current[room.id] = 0;
+    roomStartTimes.current[room.id] = performance.now();
+  }, [clearFallAlert]);
 
   // ── JSON 로드 ────────────────────────────────────────────────
   useEffect(() => {
-    let loadedCount = 0;
-
     ROOMS.forEach(room => {
       fetch(room.skeletonUrl)
         .then(r => r.json())
         .then(data => {
           framesData.current[room.id] = data;
           cooldowns.current[room.id]  = false;
-          loadedCount++;
-          // 첫 번째 JSON이 로드된 시점을 시작 기준으로 설정
-          if (loadedCount === 1) {
-            startTime.current = performance.now();
-          }
+          roomStartTimes.current[room.id] = performance.now();
         })
         .catch(() => { /* 백엔드 미실행 시 무시 */ });
     });
@@ -64,19 +94,30 @@ export function FallAlertProvider({ children }) {
   // ── 300ms마다 현재 프레임 계산 후 낙상 감지 ─────────────────
   useEffect(() => {
     const interval = setInterval(() => {
-      if (!startTime.current) return; // JSON 아직 로드 중
-
-      // performance.now() 기반 경과 시간 → 프레임 인덱스 계산
-      // setInterval이 백그라운드에서 1fps로 쓰로틀돼도 타이밍 정확
-      const elapsedSec = (performance.now() - startTime.current) / 1000;
-
       ROOMS.forEach(room => {
         const frames = framesData.current[room.id];
-        if (!frames || frames.length === 0) return;
-        if (cooldowns.current[room.id]) return;
+        const startedAt = roomStartTimes.current[room.id];
+        if (!frames || frames.length === 0 || startedAt == null) return;
 
+        // performance.now() 기반 경과 시간 → 프레임 인덱스 계산
+        // setInterval이 백그라운드에서 1fps로 쓰로틀돼도 타이밍 정확
+        const elapsedSec = (performance.now() - startedAt) / 1000;
         const totalFrames = frames.length;
         const idx = Math.floor(elapsedSec * FPS) % totalFrames;
+        const previousIdx = previousFrameIndices.current[room.id];
+        previousFrameIndices.current[room.id] = idx;
+
+        // 영상 분석 시간이 마지막 프레임에서 첫 프레임으로 돌아오면
+        // 이전 재생 회차의 낙상 알림과 쿨다운을 즉시 해제한다.
+        if (previousIdx != null && idx < previousIdx) {
+          cooldowns.current[room.id] = false;
+          if (activeAlertRoomId.current === room.id) {
+            clearFallAlert(room.name);
+          }
+          return;
+        }
+
+        if (cooldowns.current[room.id]) return;
 
         // 루프 시작 직후 침대 구간: WINDOW 미확보 → 스킵 (오탐 방지)
         if (idx < WINDOW) return;
@@ -99,21 +140,34 @@ export function FallAlertProvider({ children }) {
         // 직전에 서있었고(minPrev < 1.2) + 지금 누워있으면(curr > 1.8) → 낙상
         if (minPrev < UPRIGHT_MAX) {
           cooldowns.current[room.id] = true;
+          activeAlertRoomId.current = room.id;
           setGlobalAlert(`${room.name} ${room.patient} 낙상 감지!`);
-          setPendingFallRoom(room.name); // Dashboard가 모달 자동 오픈에 사용
-          setTimeout(() => {
-            setGlobalAlert(null);
-            cooldowns.current[room.id] = false;
-          }, COOLDOWN_MS);
+          setAlertRoomName(room.name); // 배너 클릭 시 빠른기록 모달 오픈에 사용
+          if (alertTimeout.current) clearTimeout(alertTimeout.current);
+          alertTimeout.current = setTimeout(
+            () => clearFallAlert(room.name),
+            COOLDOWN_MS
+          );
         }
       });
     }, CHECK_INTERVAL);
 
-    return () => clearInterval(interval);
-  }, []);
+    return () => {
+      clearInterval(interval);
+      if (alertTimeout.current) clearTimeout(alertTimeout.current);
+    };
+  }, [clearFallAlert]);
 
   return (
-    <FallAlertContext.Provider value={{ globalAlert, setGlobalAlert, pendingFallRoom, setPendingFallRoom }}>
+    <FallAlertContext.Provider value={{
+      globalAlert,
+      setGlobalAlert,
+      clearFallAlert,
+      resetFallAlertForVideoLoop,
+      pendingFallRoom,
+      setPendingFallRoom,
+      alertRoomName,
+    }}>
       {children}
     </FallAlertContext.Provider>
   );

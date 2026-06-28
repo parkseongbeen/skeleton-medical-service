@@ -36,10 +36,13 @@ import java.time.LocalDateTime;
  * 로그인 계정
  *   - 간호사: 123456 / 123456
  *   - 의사:   000000 / 000000
+ *   - 긴급 접근 전용: emergency / emergency119  (로그인 화면의 "긴급 접근" 버튼에서 사용)
  *
  * 환자
  *   - 301호 : 이기동 (78세, 남) — 고혈압·심부전
  *   - 302호 : 최진수 (55세, 남) — 제2형 당뇨병·우측 대퇴부 골절
+ *   - 303호 : 정유진 (68세, 여) — 지역사회 획득 폐렴
+ *   - 304호 : 한도현 (35세, 남) — 교통사고 후 다발성 늑골 골절·흉부 타박상
  */
 @Slf4j
 @Component
@@ -78,6 +81,13 @@ public class DataInitializer implements CommandLineRunner {
                 .username("123456").password(passwordEncoder.encode("123456"))
                 .name("박지수").role(Role.NURSE).wardId(ward.getId()).build());
 
+        // 긴급 접근 전용 계정 — 로그인 화면의 "긴급 접근" 버튼에서 사용.
+        // 응급 상황 시 사번/이메일·비밀번호 입력 없이 즉시 시스템에 들어갈 수 있도록
+        // 프런트엔드에서 이 계정으로 곧바로 로그인을 대신 처리한다 (긴급 모드 배너 표시).
+        userRepository.save(User.builder()
+                .username("emergency").password(passwordEncoder.encode("emergency119"))
+                .name("응급 접근").role(Role.NURSE).wardId(ward.getId()).build());
+
         // ── 환자 A : 이기동 (78세, 고혈압·심부전) ─────────────────────
         Patient pA = patientRepository.save(Patient.builder()
                 .name("이기동")
@@ -96,6 +106,28 @@ public class DataInitializer implements CommandLineRunner {
                 .gender("M")
                 .wardId(ward.getId()).bedNumber("302-1")
                 .admissionDate(LocalDate.now().minusDays(3))
+                .status(PatientStatus.ADMITTED)
+                .doctorId(doctor.getId())
+                .build());
+
+        // ── 환자 C : 정유진 (68세, 지역사회 획득 폐렴) ───────────────
+        Patient pC = patientRepository.save(Patient.builder()
+                .name("정유진")
+                .birthDate(LocalDate.of(1958, 3, 22))
+                .gender("F")
+                .wardId(ward.getId()).bedNumber("303-1")
+                .admissionDate(LocalDate.now().minusDays(5))
+                .status(PatientStatus.ADMITTED)
+                .doctorId(doctor.getId())
+                .build());
+
+        // ── 환자 D : 한도현 (35세, 교통사고 후 늑골 골절·흉부 타박상) ─
+        Patient pD = patientRepository.save(Patient.builder()
+                .name("한도현")
+                .birthDate(LocalDate.of(1991, 9, 14))
+                .gender("M")
+                .wardId(ward.getId()).bedNumber("304-1")
+                .admissionDate(LocalDate.now().minusDays(2))
                 .status(PatientStatus.ADMITTED)
                 .doctorId(doctor.getId())
                 .build());
@@ -127,6 +159,34 @@ public class DataInitializer implements CommandLineRunner {
                 36.7, 135, 84, 79, 97, 16, null);
         saveVital(pB.getId(), nurse.getId(), now.minusHours(20),
                 36.6, 133, 82, 78, 98, 16, null);
+
+        // ────────────────────────────────────────────────────────────
+        // 바이탈 사인 — 정유진 (폐렴: 발열·빈맥·O2↓·빈호흡)
+        // ────────────────────────────────────────────────────────────
+        saveVital(pC.getId(), nurse.getId(), now.minusHours(1),
+                38.3, 128, 82, 102, 90, 24, "고열 지속, 해열제 투여 후 경과 관찰 중");
+        saveVital(pC.getId(), nurse.getId(), now.minusHours(7),
+                38.6, 130, 84, 105, 89, 25, null);
+        saveVital(pC.getId(), nurse.getId(), now.minusHours(13),
+                37.9, 126, 80, 98, 91, 23, "객담 배출 위해 체위 변경 및 흉부 물리요법 시행");
+        saveVital(pC.getId(), nurse.getId(), now.minusHours(19),
+                38.1, 124, 78, 100, 90, 24, null);
+        saveVital(pC.getId(), nurse.getId(), now.minusHours(25),
+                37.7, 122, 76, 95, 92, 22, null);
+
+        // ────────────────────────────────────────────────────────────
+        // 바이탈 사인 — 한도현 (흉부 외상: 통증성 빈맥·얕은 호흡)
+        // ────────────────────────────────────────────────────────────
+        saveVital(pD.getId(), nurse.getId(), now.minusHours(1),
+                36.9, 118, 76, 88, 95, 19, "통증으로 얕은 호흡 양상, 심호흡 격려 및 진통제 투여");
+        saveVital(pD.getId(), nurse.getId(), now.minusHours(7),
+                37.0, 122, 78, 92, 94, 20, null);
+        saveVital(pD.getId(), nurse.getId(), now.minusHours(13),
+                36.8, 116, 74, 86, 96, 18, "수면 중 통증으로 자주 깸, 진통제 추가 투여 후 안정됨");
+        saveVital(pD.getId(), nurse.getId(), now.minusHours(19),
+                36.7, 120, 76, 84, 96, 17, null);
+        saveVital(pD.getId(), nurse.getId(), now.minusHours(25),
+                36.9, 124, 80, 90, 95, 19, null);
 
         // ────────────────────────────────────────────────────────────
         // 처방 약물 — 이기동
@@ -161,6 +221,34 @@ public class DataInitializer implements CommandLineRunner {
         saveMedRecord(enoxaparin, pB.getId(), nurse.getId(), now.minusHours(14), 24);
 
         // ────────────────────────────────────────────────────────────
+        // 처방 약물 — 정유진 (폐렴: 항생제·해열진통제·기관지확장제)
+        // ────────────────────────────────────────────────────────────
+        Medication ceftriaxone = saveMed(pC.getId(), doctor.getId(), "세프트리아손", 1000.0, "mg", 24);
+        Medication azithromycin = saveMed(pC.getId(), doctor.getId(), "아지스로마이신", 500.0, "mg", 24);
+        Medication acetaminophen = saveMed(pC.getId(), doctor.getId(), "아세트아미노펜", 650.0, "mg", 6);
+        Medication salbutamol = saveMed(pC.getId(), doctor.getId(), "살부타몰 네뷸라이저", 2.5, "mg", 8);
+
+        // 정유진 투여 기록
+        saveMedRecord(ceftriaxone,  pC.getId(), nurse.getId(), now.minusHours(8),  24);
+        saveMedRecord(azithromycin, pC.getId(), nurse.getId(), now.minusHours(12), 24);
+        saveMedRecord(acetaminophen,pC.getId(), nurse.getId(), now.minusHours(2),  6);
+        saveMedRecord(salbutamol,   pC.getId(), nurse.getId(), now.minusHours(4),  8);
+
+        // ────────────────────────────────────────────────────────────
+        // 처방 약물 — 한도현 (흉부 외상: 진통소염제·항응고제·위장보호제)
+        // ────────────────────────────────────────────────────────────
+        Medication tramadolD    = saveMed(pD.getId(), doctor.getId(), "트라마돌", 50.0, "mg", 8);
+        Medication ketorolac    = saveMed(pD.getId(), doctor.getId(), "케토롤락", 30.0, "mg", 12);
+        Medication enoxaparinD  = saveMed(pD.getId(), doctor.getId(), "에녹사파린", 40.0, "mg", 24);
+        Medication pantoprazole = saveMed(pD.getId(), doctor.getId(), "판토프라졸", 40.0, "mg", 24);
+
+        // 한도현 투여 기록
+        saveMedRecord(tramadolD,    pD.getId(), nurse.getId(), now.minusHours(3),  8);
+        saveMedRecord(ketorolac,    pD.getId(), nurse.getId(), now.minusHours(6),  12);
+        saveMedRecord(enoxaparinD,  pD.getId(), nurse.getId(), now.minusHours(10), 24);
+        saveMedRecord(pantoprazole, pD.getId(), nurse.getId(), now.minusHours(10), 24);
+
+        // ────────────────────────────────────────────────────────────
         // 간호 기록 — 이기동
         // ────────────────────────────────────────────────────────────
         saveNote(pA.getId(), nurse.getId(), NoteType.PATIENT,
@@ -187,6 +275,34 @@ public class DataInitializer implements CommandLineRunner {
                 "조조 체온 37.2°C로 미열 있음. 수술 후 반응성 발열 가능성 높음. 냉찜질 적용 및 수분 섭취 권장. 38°C 이상 시 담당의 연락 예정.");
         saveNote(pB.getId(), nurse.getId(), NoteType.CAUTION,
                 "당뇨 환자 — 저혈당 주의. 인슐린 투여 후 식사 여부 반드시 확인. 우측 하지 DVT 예방을 위해 에녹사파린 투여 및 탄력 스타킹 착용 유지.");
+
+        // ────────────────────────────────────────────────────────────
+        // 간호 기록 — 정유진
+        // ────────────────────────────────────────────────────────────
+        saveNote(pC.getId(), nurse.getId(), NoteType.PATIENT,
+                "입원 5일째. 발열(38.5°C 이상) 지속되어 해열제 투여 및 미온수 마사지 적용. 객담 양상 황색 점액성으로 배양검사 의뢰함.");
+        saveNote(pC.getId(), nurse.getId(), NoteType.PATIENT,
+                "산소포화도 89~91% 유지되어 비강 캐뉼라로 산소 2L/min 공급 중. 청진 시 우측 폐 하엽에서 수포음(crackle) 청진됨.");
+        saveNote(pC.getId(), nurse.getId(), NoteType.PATIENT,
+                "흉부 X-ray 재촬영 결과 우하엽 침윤 소견 호전 추세. 항생제 반응 양호하여 현재 처방 유지하기로 함.");
+        saveNote(pC.getId(), nurse.getId(), NoteType.GUARDIAN,
+                "보호자(딸 정민아) 내원하여 현재 상태 및 항생제 치료 계획 설명. 발열 양상 호전되면 익일 퇴원 가능성 안내함.");
+        saveNote(pC.getId(), nurse.getId(), NoteType.CAUTION,
+                "고령 환자 — 탈수 위험 있어 수분 섭취량 모니터링 필요. 기립성 저혈압 가능성 있어 보행 시 보호자 동반 권장. 낙상 고위험군으로 침대 난간 항시 올릴 것.");
+
+        // ────────────────────────────────────────────────────────────
+        // 간호 기록 — 한도현
+        // ────────────────────────────────────────────────────────────
+        saveNote(pD.getId(), nurse.getId(), NoteType.PATIENT,
+                "교통사고로 인한 우측 늑골 3~5번 골절 및 흉부 타박상으로 입원. 통증 조절을 위한 진통제 투여 중이며 VAS 7/10 → 4/10으로 호전됨.");
+        saveNote(pD.getId(), nurse.getId(), NoteType.PATIENT,
+                "흉부 CT 상 기흉·혈흉 소견 없음 확인. 무기폐 예방을 위해 인센티브 스파이로미터 사용법 교육 및 시행 격려 중.");
+        saveNote(pD.getId(), nurse.getId(), NoteType.PATIENT,
+                "수면 중 통증으로 각성 빈번하여 야간 진통제 용량 조정함. 이후 4시간 이상 연속 수면 가능해짐.");
+        saveNote(pD.getId(), nurse.getId(), NoteType.GUARDIAN,
+                "보호자(배우자 한지은) 방문. 사고 경위 및 향후 치료 계획(약 1주 입원 후 통원 치료 전환 예정) 설명함.");
+        saveNote(pD.getId(), nurse.getId(), NoteType.CAUTION,
+                "흉부 손상 환자 — 심호흡·기침 시 통증으로 호흡 억제 가능성 있어 무기폐·폐렴 예방 교육 강화 필요. 진통제 투여 시간 엄수할 것.");
 
         log.info("[DataInitializer] 삽입 완료 — 병동: {}, 환자: {}명",
                 ward.getWardName(), patientRepository.count());
